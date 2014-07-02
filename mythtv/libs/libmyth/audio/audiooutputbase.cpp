@@ -643,7 +643,7 @@ void AudioOutputBase::Reconfigure(const AudioSettings &orig_settings)
     }
 
     VBAUDIO(QString("Original codec was %1, %2, %3 kHz, %4 channels")
-            .arg(ff_codec_id_string((CodecID)codec))
+            .arg(ff_codec_id_string((AVCodecID)codec))
             .arg(output_settings->FormatToString(format))
             .arg(samplerate/1000)
             .arg(source_channels));
@@ -1813,8 +1813,15 @@ int AudioOutputBase::GetAudioData(uchar *buffer, int size, bool full_buffer,
  */
 void AudioOutputBase::Drain()
 {
-    while (audioready() > fragment_size)
+    while (!pauseaudio && audioready() > fragment_size)
         usleep(1000);
+    if (pauseaudio)
+    {
+        // Audio is paused and can't be drained, clear ringbuffer
+        QMutexLocker lock(&audio_buflock);
+
+        waud = raud = 0;
+    }
 }
 
 /**

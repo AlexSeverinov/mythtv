@@ -1383,7 +1383,6 @@ bool MythRenderVDPAU::DrawBitmap(uint id, uint target,
         vdest.y0 = (dst->y() < 0) ? 0 : dst->y();
         vdest.x1 = dst->x() + width;
         vdest.y1 = dst->y() + height;
-
     }
 
     if (src)
@@ -1404,12 +1403,48 @@ bool MythRenderVDPAU::DrawBitmap(uint id, uint target,
     }
 
     INIT_ST
+
+    bool createdBitmap = false;
+
+    if (!id && !gVDPAUNVIDIA)
+    {
+        // Work around MESA bug #80561
+        vdp_st = vdp_bitmap_surface_create(m_device, VDP_RGBA_FORMAT_B8G8R8A8,
+                                           1, 1, true,
+                                           &bitmap);
+        CHECK_ST
+
+        if (ok)
+        {
+            uint8_t bmp[] = { 255, 255, 255, 255 };
+            void *plane[1] = { bmp };
+            uint32_t pitch[1] = { 4 };
+            vdp_st =
+                vdp_bitmap_surface_put_bits_native(bitmap, plane, pitch, NULL);
+            CHECK_ST
+            if (!ok)
+            {
+                vdp_st = vdp_bitmap_surface_destroy(bitmap);
+                bitmap = VDP_INVALID_HANDLE;
+            }
+            else
+            {
+                createdBitmap = ok;
+            }
+        }
+    }
+
     vdp_st = vdp_output_surface_render_bitmap_surface(
-                surface,
-                dst ? &vdest : NULL, bitmap, src ? &vsrc  : NULL,
+                surface, dst ? &vdest : NULL, bitmap, src ? &vsrc  : NULL,
                 alpha >= 0 ? &color : NULL, &VDPBlends[blend],
                 VDP_OUTPUT_SURFACE_RENDER_ROTATE_0);
     CHECK_ST
+
+    if (createdBitmap)
+    {
+        vdp_st = vdp_bitmap_surface_destroy(bitmap);
+    }
+
     return ok;
 }
 
@@ -1530,8 +1565,13 @@ void MythRenderVDPAU::ChangeVideoSurfaceOwner(uint id)
     m_videoSurfaces[id].m_owner = QThread::currentThread();
 }
 
+void MythRenderVDPAU::Decode(uint id, struct vdpau_render_state *render)
+{
+    Decode(id, render, (VdpPictureInfo const *)&render->info);
+}
+
 void MythRenderVDPAU::Decode(uint id, struct vdpau_render_state *render,
-                             AVVDPAUContext *context)
+                             const VdpPictureInfo *info)
 {
     CHECK_VIDEO_SURFACES()
 
@@ -1544,20 +1584,9 @@ void MythRenderVDPAU::Decode(uint id, struct vdpau_render_state *render,
 
     INIT_ST
 
-    if (context)
-    {
-        vdp_st = vdp_decoder_render(m_decoders[id].m_id, render->surface,
-                                    (VdpPictureInfo const *)&(context->info),
-                                    context->bitstream_buffers_used,
-                                    context->bitstream_buffers);
-    }
-    else
-    {
-        vdp_st = vdp_decoder_render(m_decoders[id].m_id, render->surface,
-                                    (VdpPictureInfo const *)&(render->info),
-                                    render->bitstream_buffers_used,
-                                    render->bitstream_buffers);
-    }
+    vdp_st = vdp_decoder_render(m_decoders[id].m_id, render->surface, info,
+                                render->bitstream_buffers_used,
+                                render->bitstream_buffers);
 
     CHECK_ST
 }

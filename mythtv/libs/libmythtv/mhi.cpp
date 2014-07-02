@@ -13,9 +13,9 @@
 #include "mythuiimage.h"
 #include "osd.h"
 #include "mythdirs.h"
-#include "myth_imgconvert.h"
 #include "mythlogging.h"
 #include "mythmainwindow.h"
+#include "mythavutil.h"
 
 static bool       ft_loaded = false;
 static FT_Library ft_library;
@@ -1736,6 +1736,16 @@ void MHIDLA::DrawPoly(bool isFilled, int nPoints, const int *xArray, const int *
     }
 }
 
+MHIBitmap::MHIBitmap(MHIContext *parent, bool tiled)
+    : m_parent(parent), m_tiled(tiled), m_opaque(false),
+      m_copyCtx(new MythAVCopy(false))
+{
+}
+
+MHIBitmap::~MHIBitmap()
+{
+    delete m_copyCtx;
+}
 
 void MHIBitmap::Draw(int x, int y, QRect rect, bool tiled, bool bUnder)
 {
@@ -1803,7 +1813,7 @@ void MHIBitmap::CreateFromJPEG(const unsigned char *data, int length)
 void MHIBitmap::CreateFromMPEG(const unsigned char *data, int length)
 {
     AVCodecContext *c = NULL;
-    AVFrame *picture = NULL;
+    MythAVFrame picture;
     AVPacket pkt;
     uint8_t *buff = NULL;
     int gotPicture = 0, len;
@@ -1813,9 +1823,10 @@ void MHIBitmap::CreateFromMPEG(const unsigned char *data, int length)
     AVCodec *codec = avcodec_find_decoder(CODEC_ID_MPEG2VIDEO);
     if (!codec)
         return;
+    if (!picture)
+        return;
 
     c = avcodec_alloc_context3(NULL);
-    picture = avcodec_alloc_frame();
 
     if (avcodec_open2(c, codec, NULL) < 0)
         goto Close;
@@ -1856,14 +1867,14 @@ void MHIBitmap::CreateFromMPEG(const unsigned char *data, int length)
         memset(&retbuf, 0, sizeof(AVPicture));
 
         int bufflen = nContentWidth * nContentHeight * 3;
-        unsigned char *outputbuf = new unsigned char[bufflen];
+        unsigned char *outputbuf = (unsigned char*)av_malloc(bufflen);
 
         avpicture_fill(&retbuf, outputbuf, PIX_FMT_RGB24,
                        nContentWidth, nContentHeight);
 
-        myth_sws_img_convert(
-            &retbuf, PIX_FMT_RGB24, (AVPicture*)picture, c->pix_fmt,
-                    nContentWidth, nContentHeight);
+        AVFrame *tmp = picture;
+        m_copyCtx->Copy(&retbuf, PIX_FMT_RGB24, (AVPicture*)tmp, c->pix_fmt,
+                     nContentWidth, nContentHeight);
 
         uint8_t * buf = outputbuf;
 
@@ -1879,7 +1890,7 @@ void MHIBitmap::CreateFromMPEG(const unsigned char *data, int length)
                 m_image.setPixel(j, i, qRgb(red, green, blue));
             }
         }
-        delete [] outputbuf;
+        av_freep(&outputbuf);
     }
 
 Close:
@@ -1887,7 +1898,6 @@ Close:
     av_free_packet(&pkt);
     avcodec_close(c);
     av_free(c);
-    av_free(picture);
 }
 
 // Scale the bitmap.  Only used for image derived from MPEG I-frames.

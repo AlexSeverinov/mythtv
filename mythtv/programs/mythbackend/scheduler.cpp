@@ -2615,6 +2615,8 @@ bool Scheduler::HandleRecording(
             schedLock.unlock();
             recStatus = nexttv->StartRecording(&tempri);
             schedLock.lock();
+            ri.SetRecordingID(tempri.GetRecordingID());
+            ri.SetRecordingStartTime(tempri.GetRecordingStartTime());
 
             // activate auto expirer
             if (m_expirer)
@@ -4378,6 +4380,14 @@ void Scheduler::GetAllScheduled(RecList &proglist, SchedSortColumn sortBy,
         case kSortLastRecorded:
             sortColumn = "record.last_record";
             break;
+        case kSortNextRecording:
+            // We want to shift the rules which have no upcoming recordings to
+            // the back of the pack, most of the time the user won't be interested
+            // in rules that aren't matching recordings at the present time.
+            // We still want them available in the list however since vanishing rules
+            // violates the principle of least surprise
+            sortColumn = "record.next_record = '0000-00-00 00:00:00', record.next_record";
+            break;
         case kSortType:
             sortColumn = "record.type";
             break;
@@ -4427,7 +4437,7 @@ void Scheduler::GetAllScheduled(RecList &proglist, SchedSortColumn sortBy,
                                     result.value(19).toTime(), Qt::UTC);
         // Prevent invalid date/time warnings later
         if (!startts.isValid())
-            startts = QDateTime(MythDate::current().date(), QTime(0,0), 
+            startts = QDateTime(MythDate::current().date(), QTime(0,0),
                                 Qt::UTC);
         if (!endts.isValid())
             endts = startts;

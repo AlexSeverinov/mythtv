@@ -273,7 +273,7 @@ uint TVBrowseHelper::GetChanId(
 void TVBrowseHelper::GetNextProgram(
     BrowseDirection direction, InfoMap &infoMap) const
 {
-    if (!m_ctx->recorder)
+    if (!m_ctx || !m_ctx->recorder)
         return;
 
     QString title, subtitle, desc, category, endtime, callsign, iconpath;
@@ -412,7 +412,7 @@ void TVBrowseHelper::GetNextProgramDB(
     infoMap["dbstarttime"] = prog->GetScheduledStartTime(MythDate::ISODate);
 }
 
-inline static QString toString(const InfoMap &infoMap, const QString sep="\n")
+inline static QString toString(const InfoMap &infoMap, const QString &sep="\n")
 {
     QString str("");
     InfoMap::const_iterator it = infoMap.begin();
